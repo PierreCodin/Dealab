@@ -4,6 +4,7 @@ import aiohttp
 import asyncio
 import random
 from bs4 import BeautifulSoup
+import datetime  # pour les timestamps
 
 # Variables Railway
 TOKEN = os.environ['TOKEN']
@@ -69,9 +70,13 @@ async def check_deals():
 
     async with aiohttp.ClientSession() as session:
         while True:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"⏱ [{timestamp}] 🔎 Démarrage d'une nouvelle recherche...")
+
             html = await fetch(session, URL_DEALABS)
 
             if not html:
+                print(f"⏱ [{timestamp}] ⚠️ Pas de réponse, nouvelle tentative dans quelques secondes...")
                 await asyncio.sleep(random.uniform(20, 40))
                 continue
 
@@ -81,6 +86,9 @@ async def check_deals():
             deals = soup.select("h3.dealTitle a")
             random.shuffle(deals)
 
+            print(f"⏱ [{timestamp}] Nombre de deals trouvés : {len(deals)}")
+
+            new_deals_count = 0
             for d in deals:
                 try:
                     title = d.text.strip()
@@ -90,15 +98,19 @@ async def check_deals():
                     key = (title, link)
                     if key not in seen_deals:
                         seen_deals.add(key)
+                        new_deals_count += 1
                         await channel.send(f"🔥 **Nouveau deal détecté !**\n{title}\n{url}")
+                        print(f"✅ [{timestamp}] Nouveau deal : {title} -> {url}")
 
                 except Exception as e:
-                    print("Erreur parsing deal :", e)
+                    print(f"❌ [{timestamp}] Erreur parsing deal : {e}")
+
+            print(f"⏱ [{timestamp}] Total nouveaux deals envoyés : {new_deals_count}")
 
             # Délai ultra naturel (pas de pattern)
             delay = random.uniform(MIN_INTERVAL, MAX_INTERVAL) + random.uniform(-2, 2)
             delay = max(10, delay)  # sécurité
-            print(f"⏳ Prochain check dans {round(delay, 2)} sec…")
+            print(f"⏱ [{timestamp}] Prochain check dans {round(delay, 2)} sec…\n")
 
             await asyncio.sleep(delay)
 
