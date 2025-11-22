@@ -11,7 +11,7 @@ TOKEN = os.environ['TOKEN']
 CHANNEL_ID = int(os.environ['CHANNEL_ID'])
 URL_DEALABS = os.environ['URL_DEALABS']
 
-# Intervalle le plus "humaine possible"
+# Intervalle le plus "humain" possible
 MIN_INTERVAL = float(os.environ.get('MIN_INTERVAL', 25))
 MAX_INTERVAL = float(os.environ.get('MAX_INTERVAL', 40))
 
@@ -82,11 +82,25 @@ async def check_deals():
 
             soup = BeautifulSoup(html, "html.parser")
 
-            # Randomize l'ordre pour éviter un pattern IA
-            deals = soup.select("h3.dealTitle a")
-            random.shuffle(deals)
+            # ---- NOUVEAU : Sélecteurs mis à jour Dealabs ----
+            deal_selectors = [
+                'a[data-testid="offer-title"]',
+                'a[data-test="thread-title"]',
+                'h3.dealTitle a'  # ancien format
+            ]
+
+            deals = []
+            for selector in deal_selectors:
+                found = soup.select(selector)
+                deals.extend(found)
+
+            # Supprimer les doublons potentiels
+            deals = list(set(deals))
 
             print(f"⏱ [{timestamp}] Nombre de deals trouvés : {len(deals)}")
+
+            # ---- Mélange pour éviter un pattern IA ----
+            random.shuffle(deals)
 
             new_deals_count = 0
             for d in deals:
@@ -99,6 +113,7 @@ async def check_deals():
                     if key not in seen_deals:
                         seen_deals.add(key)
                         new_deals_count += 1
+
                         await channel.send(f"🔥 **Nouveau deal détecté !**\n{title}\n{url}")
                         print(f"✅ [{timestamp}] Nouveau deal : {title} -> {url}")
 
@@ -107,7 +122,7 @@ async def check_deals():
 
             print(f"⏱ [{timestamp}] Total nouveaux deals envoyés : {new_deals_count}")
 
-            # Délai ultra naturel (pas de pattern)
+            # ---- Délai ultra naturel ----
             delay = random.uniform(MIN_INTERVAL, MAX_INTERVAL) + random.uniform(-2, 2)
             delay = max(10, delay)  # sécurité
             print(f"⏱ [{timestamp}] Prochain check dans {round(delay, 2)} sec…\n")
