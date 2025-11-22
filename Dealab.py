@@ -36,7 +36,7 @@ client = discord.Client(intents=intents)
 async def fetch_deals():
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,  # headless=False pour debug local
+            headless=True,
             args=["--no-sandbox"]
         )
         page = await browser.new_page()
@@ -52,28 +52,22 @@ async def fetch_deals():
 
         # Attendre que les posts du groupe chargent
         try:
-            await page.wait_for_selector("div[data-test='threadCard']", timeout=20000)
+            await page.wait_for_selector("a.thread-title--list.js-thread-title", timeout=20000)
         except:
             print("⚠️ Aucun deal trouvé sur la page")
             await browser.close()
             return []
 
         # Extraire les posts
-        elements = await page.query_selector_all("div[data-test='threadCard']")
+        elements = await page.query_selector_all("a.thread-title--list.js-thread-title")
         deals = []
 
         for el in elements:
-            titre_el = await el.query_selector("a[data-test='threadTitle']")
-            if not titre_el:
-                continue
-
-            titre = await titre_el.inner_text()
-            lien = await titre_el.get_attribute("href")
-            url = "https://www.dealabs.com" + lien
-
+            titre = await el.inner_text()
+            lien = await el.get_attribute("href")
             deals.append({
                 "titre": titre.strip(),
-                "lien": url
+                "lien": lien
             })
 
         await browser.close()
