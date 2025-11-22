@@ -1,6 +1,7 @@
 import discord
 import asyncio
 import random
+import os
 from discord.ext import tasks
 from playwright.async_api import async_playwright
 from datetime import datetime
@@ -8,8 +9,8 @@ from datetime import datetime
 # ==========================
 # CONFIGURATION
 # ==========================
-DISCORD_TOKEN = "TON_TOKEN_ICI"
-CHANNEL_ID = 000000000000000  # <-- Mets l'ID du channel Discord
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")  # Récupérer le token depuis les variables d'environnement
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # Convertir en entier l'ID du channel Discord
 
 URL_DEALABS = "https://www.dealabs.com/groupe/erreur-de-prix"
 CHECK_INTERVAL = 35  # secondes
@@ -51,18 +52,18 @@ async def fetch_deals():
 
         # Attendre que les posts du groupe chargent
         try:
-            await page.wait_for_selector("li.threadList-item", timeout=20000)
+            await page.wait_for_selector("div[data-test='threadCard']", timeout=20000)
         except:
             print("⚠️ Aucun deal trouvé sur la page")
             await browser.close()
             return []
 
         # Extraire les posts
-        elements = await page.query_selector_all("li.threadList-item")
+        elements = await page.query_selector_all("div[data-test='threadCard']")
         deals = []
 
         for el in elements:
-            titre_el = await el.query_selector("a.thread-title")
+            titre_el = await el.query_selector("a[data-test='threadTitle']")
             if not titre_el:
                 continue
 
