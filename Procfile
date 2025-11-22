@@ -1,1 +1,1 @@
-worker: python Dealab.py
+worker: python -m playwright install && python Dealab.py
