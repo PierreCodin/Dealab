@@ -9,8 +9,8 @@ from datetime import datetime
 # ==========================
 # CONFIGURATION
 # ==========================
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")  # Token Discord
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))    # ID du channel Discord
 
 URL_DEALABS = "https://www.dealabs.com/groupe/erreur-de-prix"
 CHECK_INTERVAL = 35  # secondes
@@ -21,7 +21,7 @@ user_agents = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 ]
 
-deals_envoyes = set()
+deals_envoyes = set()  # pour éviter les doublons
 
 # ==========================
 # DISCORD CLIENT
@@ -30,17 +30,15 @@ intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 # ==========================
-# SCRAPING DEALABS (Playwright)
+# SCRAPING DEALABS
 # ==========================
 async def fetch_deals():
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=False,  # voir le navigateur pour debug
+            headless=True,
             args=["--no-sandbox"]
         )
         page = await browser.new_page()
-
-        # Anti-bot
         await page.set_user_agent(random.choice(user_agents))
         await page.set_viewport_size({"width": 1280, "height": 800})
         await page.evaluate(
@@ -48,28 +46,39 @@ async def fetch_deals():
         )
 
         await page.goto(URL_DEALABS, timeout=60000)
-        await page.wait_for_timeout(5000)  # attendre 5s pour que le JS charge
 
         try:
-            await page.wait_for_selector("a.thread-title--list.js-thread-title", timeout=30000)
+            await page.wait_for_selector("div[data-test='threadCard']", timeout=20000)
         except:
             print("⚠️ Aucun deal trouvé sur la page")
-            html = await page.content()
-            print(html[:2000])  # debug: premiers 2000 caractères du HTML
             await browser.close()
             return []
 
-        elements = await page.query_selector_all("a.thread-title--list.js-thread-title")
+        elements = await page.query_selector_all("div[data-test='threadCard']")
         deals = []
 
         for el in elements:
-            titre = await el.inner_text()
-            lien = await el.get_attribute("href")
-            if lien:
-                deals.append({
-                    "titre": titre.strip(),
-                    "lien": lien
-                })
+            titre_el = await el.query_selector("a.thread-title")
+            if not titre_el:
+                continue
+            titre = await titre_el.inner_text()
+            lien = await titre_el.get_attribute("href")
+            url = "https://www.dealabs.com" + lien
+
+            # Description
+            desc_el = await el.query_selector("div.userHtml-content div")
+            description = await desc_el.inner_text() if desc_el else ""
+
+            # Image (si disponible)
+            img_el = await el.query_selector("img")
+            image_url = await img_el.get_attribute("src") if img_el else None
+
+            deals.append({
+                "titre": titre.strip(),
+                "lien": url,
+                "description": description.strip(),
+                "image": image_url
+            })
 
         await browser.close()
         return deals
@@ -81,7 +90,6 @@ async def fetch_deals():
 async def check_deals():
     channel = client.get_channel(CHANNEL_ID)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     print(f"⏱ [{now}] 🔎 Démarrage d'une nouvelle recherche...")
 
     deals = await fetch_deals()
@@ -96,8 +104,12 @@ async def check_deals():
             embed = discord.Embed(
                 title=d["titre"],
                 url=d["lien"],
+                description=d["description"],
                 color=0x00FF00
             )
+            if d["image"]:
+                embed.set_image(url=d["image"])
+
             await channel.send(embed=embed)
 
     print(f"⏱ [{now}] Total nouveaux deals envoyés : {nouveaux}")
