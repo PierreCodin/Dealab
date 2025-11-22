@@ -11,7 +11,7 @@ from datetime import datetime
 DISCORD_TOKEN = "TON_TOKEN_ICI"
 CHANNEL_ID = 000000000000000  # <-- Mets l'ID du channel Discord
 
-URL_DEALABS = "https://www.dealabs.com/nouveaux"
+URL_DEALABS = "https://www.dealabs.com/groupe/erreur-de-prix"
 CHECK_INTERVAL = 35  # secondes
 
 user_agents = [
@@ -26,10 +26,8 @@ deals_envoyes = set()
 # ==========================
 # DISCORD CLIENT
 # ==========================
-
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
-
 
 # ==========================
 # SCRAPPING DEALABS (Playwright)
@@ -37,7 +35,7 @@ client = discord.Client(intents=intents)
 async def fetch_deals():
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,  # tu peux passer à False en local si tu veux voir
+            headless=True,  # headless=False pour debug local
             args=["--no-sandbox"]
         )
         page = await browser.new_page()
@@ -51,36 +49,34 @@ async def fetch_deals():
 
         await page.goto(URL_DEALABS, timeout=60000)
 
-        # Attendre que les deals chargent
-        await page.wait_for_selector("article[data-qa='thread-item']", timeout=10000)
+        # Attendre que les posts du groupe chargent
+        try:
+            await page.wait_for_selector("li.threadList-item", timeout=20000)
+        except:
+            print("⚠️ Aucun deal trouvé sur la page")
+            await browser.close()
+            return []
 
-        # Extraire les deals
-        elements = await page.query_selector_all("article[data-qa='thread-item']")
-
+        # Extraire les posts
+        elements = await page.query_selector_all("li.threadList-item")
         deals = []
-        for el in elements:
-            titre = await el.query_selector("a[data-qa='thread-title-link']")
-            prix = await el.query_selector("span[data-qa='thread-price']")
-            lien = await el.query_selector("a[data-qa='thread-title-link']")
 
-            if not titre or not lien:
+        for el in elements:
+            titre_el = await el.query_selector("a.thread-title")
+            if not titre_el:
                 continue
 
-            t = await titre.inner_text()
-            url = await lien.get_attribute("href")
-            url = "https://www.dealabs.com" + url
-
-            p = await prix.inner_text() if prix else "Prix inconnu"
+            titre = await titre_el.inner_text()
+            lien = await titre_el.get_attribute("href")
+            url = "https://www.dealabs.com" + lien
 
             deals.append({
-                "titre": t.strip(),
-                "prix": p.strip(),
+                "titre": titre.strip(),
                 "lien": url
             })
 
         await browser.close()
         return deals
-
 
 # ==========================
 # TÂCHE AUTOMATIQUE
@@ -93,7 +89,6 @@ async def check_deals():
     print(f"⏱ [{now}] 🔎 Démarrage d'une nouvelle recherche...")
 
     deals = await fetch_deals()
-
     print(f"⏱ [{now}] Nombre de deals trouvés : {len(deals)}")
 
     nouveaux = 0
@@ -105,14 +100,12 @@ async def check_deals():
             embed = discord.Embed(
                 title=d["titre"],
                 url=d["lien"],
-                description=f"💰 **{d['prix']}**",
                 color=0x00FF00
             )
             await channel.send(embed=embed)
 
     print(f"⏱ [{now}] Total nouveaux deals envoyés : {nouveaux}")
     print(f"⏱ [{now}] Prochain check dans {CHECK_INTERVAL} sec…")
-
 
 # ==========================
 # DÉMARRAGE DU BOT
@@ -122,6 +115,5 @@ async def on_ready():
     print(f"🤖 Connecté en tant que {client.user}")
     await asyncio.sleep(2)
     check_deals.start()
-
 
 client.run(DISCORD_TOKEN)
