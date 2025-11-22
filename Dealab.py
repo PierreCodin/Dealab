@@ -9,8 +9,8 @@ from datetime import datetime
 # ==========================
 # CONFIGURATION
 # ==========================
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")  # Récupérer le token depuis les variables d'environnement
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # Convertir en entier l'ID du channel Discord
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
 URL_DEALABS = "https://www.dealabs.com/groupe/erreur-de-prix"
 CHECK_INTERVAL = 35  # secondes
@@ -21,7 +21,6 @@ user_agents = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 ]
 
-# pour éviter de renvoyer plusieurs fois les mêmes deals
 deals_envoyes = set()
 
 # ==========================
@@ -31,12 +30,12 @@ intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 # ==========================
-# SCRAPPING DEALABS (Playwright)
+# SCRAPING DEALABS (Playwright)
 # ==========================
 async def fetch_deals():
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,
+            headless=False,  # voir le navigateur pour debug
             args=["--no-sandbox"]
         )
         page = await browser.new_page()
@@ -49,26 +48,28 @@ async def fetch_deals():
         )
 
         await page.goto(URL_DEALABS, timeout=60000)
+        await page.wait_for_timeout(5000)  # attendre 5s pour que le JS charge
 
-        # Attendre que les posts du groupe chargent
         try:
-            await page.wait_for_selector("a.thread-title--list.js-thread-title", timeout=20000)
+            await page.wait_for_selector("a.thread-title--list.js-thread-title", timeout=30000)
         except:
             print("⚠️ Aucun deal trouvé sur la page")
+            html = await page.content()
+            print(html[:2000])  # debug: premiers 2000 caractères du HTML
             await browser.close()
             return []
 
-        # Extraire les posts
         elements = await page.query_selector_all("a.thread-title--list.js-thread-title")
         deals = []
 
         for el in elements:
             titre = await el.inner_text()
             lien = await el.get_attribute("href")
-            deals.append({
-                "titre": titre.strip(),
-                "lien": lien
-            })
+            if lien:
+                deals.append({
+                    "titre": titre.strip(),
+                    "lien": lien
+                })
 
         await browser.close()
         return deals
