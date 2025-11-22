@@ -9,8 +9,8 @@ from datetime import datetime
 # ==========================
 # CONFIGURATION
 # ==========================
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")  # Récupérer le token depuis les variables d'environnement
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # Convertir en entier l'ID du channel Discord
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
 URL_DEALABS = "https://www.dealabs.com/groupe/erreur-de-prix"
 CHECK_INTERVAL = 35  # secondes
@@ -36,7 +36,7 @@ client = discord.Client(intents=intents)
 async def fetch_deals():
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,  # headless=False pour debug local
+            headless=True,
             args=["--no-sandbox"]
         )
         page = await browser.new_page()
@@ -50,7 +50,7 @@ async def fetch_deals():
 
         await page.goto(URL_DEALABS, timeout=60000)
 
-        # Attendre que les posts du groupe chargent
+        # Attendre que les posts chargent
         try:
             await page.wait_for_selector("div[data-test='threadCard']", timeout=20000)
         except:
@@ -58,7 +58,6 @@ async def fetch_deals():
             await browser.close()
             return []
 
-        # Extraire les posts
         elements = await page.query_selector_all("div[data-test='threadCard']")
         deals = []
 
