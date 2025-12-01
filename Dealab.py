@@ -2,16 +2,16 @@ import os
 import asyncio
 import random
 import datetime
-import aiohttp
 from bs4 import BeautifulSoup
 import discord
 from discord.ext import commands
+from playwright.async_api import async_playwright
 
 # ========================
 # 🔐 Variables d'environnement
 # ========================
-TOKEN = os.getenv("DISCORD_TOKEN")  # À mettre dans Railway
-CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))  # ID du salon dans Railway
+TOKEN = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 
 URL = "https://www.dealabs.com/groupe/erreur-de-prix"
 MIN_INTERVAL = 20
@@ -23,73 +23,59 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ========================
-# 🌐 Headers pour Dealabs
+# 🌐 Fetch page Dealabs via Playwright
 # ========================
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/120.0.0.0 Safari/537.36"
-}
-
-# ========================
-# 🌐 Fetch page Dealabs
-# ========================
-async def fetch(session, url):
+async def fetch(url):
     try:
-        async with session.get(url, timeout=20, headers=HEADERS) as resp:
-            if resp.status == 200:
-                return await resp.text()
-            print("⚠️ HTTP status:", resp.status)
-            return None
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, timeout=30000)  # 30s max
+            content = await page.content()
+            await browser.close()
+            return content
     except Exception as e:
-        print("⚠️ Fetch error:", e)
+        print("⚠️ Fetch error (Playwright):", e)
         return None
 
 # ========================
 # 🔎 Boucle de recherche
 # ========================
 async def check_deals(channel):
-    async with aiohttp.ClientSession() as session:
-        while True:
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"⏱ [{timestamp}] 🔎 Nouvelle recherche…")
+    while True:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"⏱ [{timestamp}] 🔎 Nouvelle recherche…")
 
-            html = await fetch(session, URL)
-            if not html:
-                print("⚠️ Aucune réponse de Dealabs.")
-                await asyncio.sleep(random.uniform(10, 20))
-                continue
+        html = await fetch(URL)
+        if not html:
+            print("⚠️ Aucune réponse de Dealabs.")
+            await asyncio.sleep(random.uniform(10, 20))
+            continue
 
-            soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, "html.parser")
+        deals = soup.select("article a[href*='/bons-plans/']")
+        print(f"➡️ Deals trouvés : {len(deals)}")
 
-            # 🔥 Sélecteur correct Dealabs (2025)
-            deals = soup.select("article a[href*='/bons-plans/']")
-            print(f"➡️ Deals trouvés : {len(deals)}")
+        new_deals = 0
+        for d in deals:
+            try:
+                title = d.get_text(strip=True)
+                url = "https://www.dealabs.com" + d["href"]
 
-            new_deals = 0
+                key = (title, url)
+                if key not in seen_deals:
+                    seen_deals.add(key)
+                    new_deals += 1
+                    await channel.send(f"🔥 **Nouveau deal détecté !**\n**{title}**\n{url}")
+                    print(f"➡️ envoyé : {title}")
 
-            for d in deals:
-                try:
-                    title = d.get_text(strip=True)
-                    url = "https://www.dealabs.com" + d["href"]
+            except Exception as e:
+                print("❌ Erreur parsing deal :", e)
 
-                    key = (title, url)
-                    if key not in seen_deals:
-                        seen_deals.add(key)
-                        new_deals += 1
-
-                        # 💬 Envoi au salon Discord
-                        await channel.send(f"🔥 **Nouveau deal détecté !**\n**{title}**\n{url}")
-                        print(f"➡️ envoyé : {title}")
-
-                except Exception as e:
-                    print("❌ Erreur parsing deal :", e)
-
-            print(f"📩 Nouveaux deals envoyés : {new_deals}")
-
-            delay = max(10, random.uniform(MIN_INTERVAL, MAX_INTERVAL))
-            print(f"⏳ Prochain check dans {round(delay, 2)} sec…\n")
-            await asyncio.sleep(delay)
+        print(f"📩 Nouveaux deals envoyés : {new_deals}")
+        delay = max(10, random.uniform(MIN_INTERVAL, MAX_INTERVAL))
+        print(f"⏳ Prochain check dans {round(delay, 2)} sec…\n")
+        await asyncio.sleep(delay)
 
 # ========================
 # 🚀 Démarrage du bot
@@ -97,12 +83,10 @@ async def check_deals(channel):
 @bot.event
 async def on_ready():
     print(f"🤖 Connecté en tant que {bot.user}")
-
     channel = bot.get_channel(CHANNEL_ID)
     if channel is None:
         print("❌ ERREUR : Impossible de trouver le salon. Vérifie DISCORD_CHANNEL_ID.")
         return
-
     bot.loop.create_task(check_deals(channel))
 
 # ========================
