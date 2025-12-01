@@ -16,7 +16,7 @@ URL = "https://www.dealabs.com/groupe/erreur-de-prix"
 seen_deals = set()
 
 # ========================
-# 🔐 Intents Discord (avec message_content activé)
+# 🔐 Intents Discord
 # ========================
 intents = discord.Intents.default()
 intents.message_content = True
@@ -79,19 +79,19 @@ async def fetch_deals():
 async def check_loop(channel):
     while True:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"⏱ [{timestamp}] 🔎 Nouvelle recherche…")  # uniquement dans Railway
-
         try:
             deals = await fetch_deals()
-            new_deals = 0
+            print(f"⏱ [{timestamp}] Nombre de deals récupérés : {len(deals)}")
+
+            new_deals_count = 0
             for deal in deals:
                 key = (deal["title"], deal["url"])
                 if key in seen_deals:
                     continue
                 seen_deals.add(key)
-                new_deals += 1
+                new_deals_count += 1
 
-                # Envoie uniquement les nouveaux deals sur Discord
+                # Envoi uniquement des nouveaux deals sur Discord
                 msg = (
                     f"🔥 **Nouveau deal détecté !**\n"
                     f"**{deal['title']}**\n"
@@ -103,16 +103,16 @@ async def check_loop(channel):
                     msg += f"Image : {deal['image']}"
 
                 await channel.send(msg)
-                print(f"➡️ Envoyé sur Discord : {deal['title']}")  # log dans Railway
+                print(f"➡️ Envoyé sur Discord : {deal['title']}")
 
-            print(f"📩 Nouveaux deals envoyés : {new_deals}")
+            if new_deals_count == 0:
+                print("📩 Aucun nouveau deal.")
 
         except Exception as e:
             print("❌ Erreur lors de la récupération des deals :", e)
 
-        # délai aléatoire entre 20 et 40 secondes
-        delay = random.randint(20, 40)
-        await asyncio.sleep(delay)
+        # Intervalle aléatoire entre 20 et 40 secondes
+        await asyncio.sleep(random.randint(20, 40))
 
 # ========================
 # 🚀 Bot Discord
@@ -122,7 +122,7 @@ async def on_ready():
     print(f"🤖 Connecté en tant que {bot.user}")
     channel = bot.get_channel(CHANNEL_ID)
     if not channel:
-        print("❌ ERREUR : Impossible de trouver le salon Discord. Vérifie DISCORD_CHANNEL_ID.")
+        print("❌ ERREUR : Impossible de trouver le salon Discord.")
         return
     bot.loop.create_task(check_loop(channel))
 
