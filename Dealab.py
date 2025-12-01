@@ -79,9 +79,7 @@ async def fetch_deals():
 async def check_loop(channel):
     while True:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        scan_msg = f"⏱ [{timestamp}] 🔎 Nouvelle recherche…"
-        print(scan_msg)
-        await channel.send(scan_msg)  # <-- envoie l'heure de chaque scan sur Discord
+        print(f"⏱ [{timestamp}] 🔎 Nouvelle recherche…")  # uniquement dans Railway
 
         try:
             deals = await fetch_deals()
@@ -93,6 +91,7 @@ async def check_loop(channel):
                 seen_deals.add(key)
                 new_deals += 1
 
+                # Envoie uniquement les nouveaux deals sur Discord
                 msg = (
                     f"🔥 **Nouveau deal détecté !**\n"
                     f"**{deal['title']}**\n"
@@ -104,16 +103,15 @@ async def check_loop(channel):
                     msg += f"Image : {deal['image']}"
 
                 await channel.send(msg)
-                print(f"➡️ Envoyé : {deal['title']}")
+                print(f"➡️ Envoyé sur Discord : {deal['title']}")  # log dans Railway
 
             print(f"📩 Nouveaux deals envoyés : {new_deals}")
 
         except Exception as e:
             print("❌ Erreur lors de la récupération des deals :", e)
 
-        # ⏱ Délai aléatoire entre 20 et 40 secondes
+        # délai aléatoire entre 20 et 40 secondes
         delay = random.randint(20, 40)
-        print(f"⏳ Prochain scan dans {delay} secondes…")
         await asyncio.sleep(delay)
 
 # ========================
