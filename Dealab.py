@@ -11,7 +11,7 @@ from discord.ext import commands
 # 🔐 Variables d'environnement
 # ========================
 TOKEN = os.getenv("DISCORD_TOKEN")  # À mettre dans Railway
-CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))  # ID du salon
+CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))  # ID du salon Discord
 
 URL = "https://www.dealabs.com/groupe/erreur-de-prix"
 MIN_INTERVAL = 20
@@ -34,6 +34,9 @@ HEADERS = {
                   "Chrome/120.0.0.0 Safari/537.36",
     "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Referer": "https://www.dealabs.com/",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
 }
 
 # ========================
@@ -67,19 +70,58 @@ async def check_deals(channel):
 
             soup = BeautifulSoup(html, "html.parser")
             deals = soup.select("article a[href*='/bons-plans/']")
+
             print(f"➡️ Deals trouvés : {len(deals)}")
 
             new_deals = 0
             for d in deals:
                 try:
-                    title = d.get_text(strip=True)
-                    url = "https://www.dealabs.com" + d["href"]
+                    # 🔹 URL propre
+                    href = d.get("href")
+                    url = href if href.startswith("http") else "https://www.dealabs.com" + href
+
+                    # 🔹 Titre
+                    title = d.select_one("h2")  # le titre principal dans l'article
+                    title = title.get_text(strip=True) if title else "Pas de titre"
+
+                    # 🔹 Commerçant / source
+                    merchant = d.select_one(".deal-seller-name")
+                    merchant = merchant.get_text(strip=True) if merchant else "Inconnu"
+
+                    # 🔹 Image
+                    img_tag = d.select_one("img")
+                    img_url = img_tag.get("data-src") or img_tag.get("src") if img_tag else None
+
+                    # 🔹 Prix actuel
+                    price_tag = d.select_one(".price")
+                    price = price_tag.get_text(strip=True) if price_tag else "N/A"
+
+                    # 🔹 Ancien prix / réduction
+                    old_price_tag = d.select_one(".old-price")
+                    old_price = old_price_tag.get_text(strip=True) if old_price_tag else None
+                    discount_tag = d.select_one(".deal-discount")
+                    discount = discount_tag.get_text(strip=True) if discount_tag else None
+
                     key = (title, url)
                     if key not in seen_deals:
                         seen_deals.add(key)
                         new_deals += 1
-                        await channel.send(f"🔥 **Nouveau deal détecté !**\n**{title}**\n{url}")
-                        print(f"➡️ envoyé : {title}")
+
+                        # 🔹 Embed Discord
+                        embed = discord.Embed(title=title, url=url, color=0xff0000)
+                        embed.add_field(name="Commerçant", value=merchant, inline=True)
+                        embed.add_field(name="Prix", value=price, inline=True)
+                        if old_price:
+                            embed.add_field(name="Ancien prix", value=old_price, inline=True)
+                        if discount:
+                            embed.add_field(name="Réduction", value=discount, inline=True)
+                        if img_url:
+                            embed.set_image(url=img_url)
+                        embed.set_footer(text=f"Détecté le {timestamp}")
+
+                        await channel.send(embed=embed)
+                        print(f"➡️ Envoyé : {title}")
+
                 except Exception as e:
                     print("❌ Erreur parsing deal :", e)
 
