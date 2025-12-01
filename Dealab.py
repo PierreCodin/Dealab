@@ -16,9 +16,10 @@ CHECK_INTERVAL = 30  # secondes
 seen_deals = set()
 
 # ========================
-# 🔐 Intents Discord
+# 🔐 Intents Discord (avec message_content activé)
 # ========================
 intents = discord.Intents.default()
+intents.message_content = True  # <-- nécessaire pour lire le contenu des messages
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ========================
