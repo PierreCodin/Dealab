@@ -1,11 +1,3 @@
-# ========================
-# Image de base
-# ========================
-FROM python:3.12-slim
-
-# ========================
-# Dépendances système pour Chromium / Playwright
-# ========================
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -32,23 +24,5 @@ RUN apt-get update && apt-get install -y \
     libdbus-1-3 \
     libnspr4 \
     libsmime3 \
-    libnssutil3 \
     libxkbcommon0 \
- && rm -rf /var/lib/apt/lists/*
-
-# ========================
-# Créer le dossier de travail
-# ========================
-WORKDIR /app
-
-# ========================
-# Copier les fichiers Python
-# ========================
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-
-# ========================
-# Lancer le bot
-# ========================
-CMD ["python", "bot.py"]
+    && rm -rf /var/lib/apt/lists/*
