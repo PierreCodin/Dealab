@@ -6,12 +6,13 @@ import aiohttp
 from bs4 import BeautifulSoup
 import discord
 from discord.ext import commands
+import json
 
 # ========================
 # 🔐 Variables d'environnement
 # ========================
 TOKEN = os.getenv("DISCORD_TOKEN")  # À mettre dans Railway
-CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))  # ID du salon Discord
+CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))  # ID du salon
 
 URL = "https://www.dealabs.com/groupe/erreur-de-prix"
 MIN_INTERVAL = 20
@@ -34,9 +35,6 @@ HEADERS = {
                   "Chrome/120.0.0.0 Safari/537.36",
     "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Referer": "https://www.dealabs.com/",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
 }
 
 # ========================
@@ -69,57 +67,42 @@ async def check_deals(channel):
                 continue
 
             soup = BeautifulSoup(html, "html.parser")
-            deals = soup.select("article a[href*='/bons-plans/']")
-
-            print(f"➡️ Deals trouvés : {len(deals)}")
+            articles = soup.select("article.thread")
+            print(f"➡️ Articles trouvés : {len(articles)}")
 
             new_deals = 0
-            for d in deals:
+            for article in articles:
                 try:
-                    # 🔹 URL propre
-                    href = d.get("href")
-                    url = href if href.startswith("http") else "https://www.dealabs.com" + href
+                    # Vérifier si le deal est expiré
+                    if "thread-expired" in article.get("class", []):
+                        continue
 
-                    # 🔹 Titre
-                    title = d.select_one("h2")  # le titre principal dans l'article
-                    title = title.get_text(strip=True) if title else "Pas de titre"
+                    # Extraire le JSON intégré
+                    data_json = article.get("data-tracking")
+                    deal_data = json.loads(data_json) if data_json else {}
 
-                    # 🔹 Commerçant / source
-                    merchant = d.select_one(".deal-seller-name")
-                    merchant = merchant.get_text(strip=True) if merchant else "Inconnu"
-
-                    # 🔹 Image
-                    img_tag = d.select_one("img")
-                    img_url = img_tag.get("data-src") or img_tag.get("src") if img_tag else None
-
-                    # 🔹 Prix actuel
-                    price_tag = d.select_one(".price")
-                    price = price_tag.get_text(strip=True) if price_tag else "N/A"
-
-                    # 🔹 Ancien prix / réduction
-                    old_price_tag = d.select_one(".old-price")
-                    old_price = old_price_tag.get_text(strip=True) if old_price_tag else None
-                    discount_tag = d.select_one(".deal-discount")
-                    discount = discount_tag.get_text(strip=True) if discount_tag else None
+                    title = deal_data.get("threadTitle") or "Pas de titre"
+                    url = "https://www.dealabs.com" + deal_data.get("threadUrl", "#")
+                    merchant = deal_data.get("merchant", "Inconnu")
+                    current_price = deal_data.get("price", {}).get("currentPrice", "N/A")
+                    old_price = deal_data.get("price", {}).get("oldPrice", "N/A")
+                    discount = deal_data.get("price", {}).get("discount", "N/A")
+                    image = deal_data.get("threadImageUrl", None)
 
                     key = (title, url)
                     if key not in seen_deals:
                         seen_deals.add(key)
                         new_deals += 1
 
-                        # 🔹 Embed Discord
-                        embed = discord.Embed(title=title, url=url, color=0xff0000)
-                        embed.add_field(name="Commerçant", value=merchant, inline=True)
-                        embed.add_field(name="Prix", value=price, inline=True)
-                        if old_price:
-                            embed.add_field(name="Ancien prix", value=old_price, inline=True)
-                        if discount:
-                            embed.add_field(name="Réduction", value=discount, inline=True)
-                        if img_url:
-                            embed.set_image(url=img_url)
-                        embed.set_footer(text=f"Détecté le {timestamp}")
+                        # Construire le message Discord
+                        message = f"🔥 **Nouveau deal détecté !**\n**{title}**\n"
+                        message += f"Commerçant : {merchant}\n"
+                        message += f"Prix : {current_price} | Ancien prix : {old_price} | Réduction : {discount}\n"
+                        message += f"URL : {url}\n"
+                        if image:
+                            message += f"Image : {image}\n"
 
-                        await channel.send(embed=embed)
+                        await channel.send(message)
                         print(f"➡️ Envoyé : {title}")
 
                 except Exception as e:
