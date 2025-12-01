@@ -6,13 +6,12 @@ import aiohttp
 from bs4 import BeautifulSoup
 import discord
 from discord.ext import commands
-import json
 
 # ========================
 # 🔐 Variables d'environnement
 # ========================
-TOKEN = os.getenv("DISCORD_TOKEN")  # À mettre dans Railway
-CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))  # ID du salon
+TOKEN = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 
 URL = "https://www.dealabs.com/groupe/erreur-de-prix"
 MIN_INTERVAL = 20
@@ -67,40 +66,48 @@ async def check_deals(channel):
                 continue
 
             soup = BeautifulSoup(html, "html.parser")
-            articles = soup.select("article.thread")
+            articles = soup.select("article.thread")  # tous les deals
             print(f"➡️ Articles trouvés : {len(articles)}")
 
             new_deals = 0
             for article in articles:
                 try:
-                    # Vérifier si le deal est expiré
-                    if "thread-expired" in article.get("class", []):
+                    # Ignorer si deal expiré
+                    if article.select_one(".thread-expired"):
                         continue
 
-                    # Extraire le JSON intégré
-                    data_json = article.get("data-tracking")
-                    deal_data = json.loads(data_json) if data_json else {}
-
-                    title = deal_data.get("threadTitle") or "Pas de titre"
-                    url = "https://www.dealabs.com" + deal_data.get("threadUrl", "#")
-                    merchant = deal_data.get("merchant", "Inconnu")
-                    current_price = deal_data.get("price", {}).get("currentPrice", "N/A")
-                    old_price = deal_data.get("price", {}).get("oldPrice", "N/A")
-                    discount = deal_data.get("price", {}).get("discount", "N/A")
-                    image = deal_data.get("threadImageUrl", None)
+                    # Titre
+                    title_tag = article.select_one("h2.thread-title a")
+                    title = title_tag.get_text(strip=True) if title_tag else "Pas de titre"
+                    # URL
+                    url = "https://www.dealabs.com" + title_tag["href"] if title_tag else URL
+                    # Commerçant
+                    merchant_tag = article.select_one(".merchant-name")
+                    merchant = merchant_tag.get_text(strip=True) if merchant_tag else "Inconnu"
+                    # Prix actuel
+                    price_tag = article.select_one(".thread-price span.price")
+                    current_price = price_tag.get_text(strip=True) if price_tag else "N/A"
+                    # Ancien prix
+                    old_price_tag = article.select_one(".thread-price .old-price")
+                    old_price = old_price_tag.get_text(strip=True) if old_price_tag else "N/A"
+                    # Réduction
+                    discount_tag = article.select_one(".thread-price .reduction")
+                    discount = discount_tag.get_text(strip=True) if discount_tag else "N/A"
+                    # Image
+                    image_tag = article.select_one("img.thread-image")
+                    image_url = image_tag["data-src"] if image_tag and image_tag.has_attr("data-src") else None
 
                     key = (title, url)
                     if key not in seen_deals:
                         seen_deals.add(key)
                         new_deals += 1
 
-                        # Construire le message Discord
                         message = f"🔥 **Nouveau deal détecté !**\n**{title}**\n"
                         message += f"Commerçant : {merchant}\n"
                         message += f"Prix : {current_price} | Ancien prix : {old_price} | Réduction : {discount}\n"
                         message += f"URL : {url}\n"
-                        if image:
-                            message += f"Image : {image}\n"
+                        if image_url:
+                            message += f"Image : {image_url}"
 
                         await channel.send(message)
                         print(f"➡️ Envoyé : {title}")
@@ -110,7 +117,7 @@ async def check_deals(channel):
 
             print(f"📩 Nouveaux deals envoyés : {new_deals}")
             delay = max(10, random.uniform(MIN_INTERVAL, MAX_INTERVAL))
-            print(f"⏳ Prochain check dans {round(delay, 2)} sec…\n")
+            print(f"⏳ Prochain check dans {round(delay,2)} sec…\n")
             await asyncio.sleep(delay)
 
 # ========================
