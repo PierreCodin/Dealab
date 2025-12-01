@@ -23,6 +23,13 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ========================
+# 🔎 Commande test
+# ========================
+@bot.command()
+async def test(ctx):
+    await ctx.send("✅ Le bot fonctionne et peut envoyer un message ici.")
+
+# ========================
 # 🔎 Fonction pour récupérer les deals
 # ========================
 async def fetch_deals():
@@ -91,7 +98,6 @@ async def check_loop(channel):
                 seen_deals.add(key)
                 new_deals_count += 1
 
-                # Envoi uniquement des nouveaux deals sur Discord
                 msg = (
                     f"🔥 **Nouveau deal détecté !**\n"
                     f"**{deal['title']}**\n"
@@ -111,7 +117,6 @@ async def check_loop(channel):
         except Exception as e:
             print("❌ Erreur lors de la récupération des deals :", e)
 
-        # Intervalle aléatoire entre 20 et 40 secondes
         await asyncio.sleep(random.randint(20, 40))
 
 # ========================
