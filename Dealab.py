@@ -22,13 +22,21 @@ seen_deals = set()
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ========================
+# 🌐 Headers pour Dealabs
+# ========================
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/120.0.0.0 Safari/537.36"
+}
 
 # ========================
 # 🌐 Fetch page Dealabs
 # ========================
 async def fetch(session, url):
     try:
-        async with session.get(url, timeout=20) as resp:
+        async with session.get(url, timeout=20, headers=HEADERS) as resp:
             if resp.status == 200:
                 return await resp.text()
             print("⚠️ HTTP status:", resp.status)
@@ -36,7 +44,6 @@ async def fetch(session, url):
     except Exception as e:
         print("⚠️ Fetch error:", e)
         return None
-
 
 # ========================
 # 🔎 Boucle de recherche
@@ -50,7 +57,7 @@ async def check_deals(channel):
             html = await fetch(session, URL)
             if not html:
                 print("⚠️ Aucune réponse de Dealabs.")
-                await asyncio.sleep(20)
+                await asyncio.sleep(random.uniform(10, 20))
                 continue
 
             soup = BeautifulSoup(html, "html.parser")
@@ -73,7 +80,6 @@ async def check_deals(channel):
 
                         # 💬 Envoi au salon Discord
                         await channel.send(f"🔥 **Nouveau deal détecté !**\n**{title}**\n{url}")
-
                         print(f"➡️ envoyé : {title}")
 
                 except Exception as e:
@@ -84,7 +90,6 @@ async def check_deals(channel):
             delay = max(10, random.uniform(MIN_INTERVAL, MAX_INTERVAL))
             print(f"⏳ Prochain check dans {round(delay, 2)} sec…\n")
             await asyncio.sleep(delay)
-
 
 # ========================
 # 🚀 Démarrage du bot
@@ -99,7 +104,6 @@ async def on_ready():
         return
 
     bot.loop.create_task(check_deals(channel))
-
 
 # ========================
 # 🔐 Lancement du bot
