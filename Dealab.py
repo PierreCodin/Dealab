@@ -1,9 +1,7 @@
 import os
 import asyncio
-import random
 import datetime
-import aiohttp
-from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
 import discord
 from discord.ext import commands
 
@@ -12,10 +10,8 @@ from discord.ext import commands
 # ========================
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
-
 URL = "https://www.dealabs.com/groupe/erreur-de-prix"
-MIN_INTERVAL = 20
-MAX_INTERVAL = 40
+CHECK_INTERVAL = 30  # secondes
 
 seen_deals = set()
 
@@ -26,119 +22,108 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ========================
-# 🌐 Headers pour Dealabs
+# 🔎 Fonction pour récupérer les deals
 # ========================
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/120.0.0.0 Safari/537.36",
-    "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-}
+async def fetch_deals():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(URL, timeout=60000)
+        await page.wait_for_load_state("networkidle")
 
-# ========================
-# 🌐 Fetch page Dealabs
-# ========================
-async def fetch(session, url):
-    try:
-        async with session.get(url, timeout=20, headers=HEADERS) as resp:
-            if resp.status == 200:
-                return await resp.text()
-            print(f"⚠️ HTTP status: {resp.status}")
-            return None
-    except Exception as e:
-        print("⚠️ Fetch error:", e)
-        return None
+        deals = await page.query_selector_all("article.thread")
+        results = []
 
-# ========================
-# 🔎 Boucle de recherche
-# ========================
-async def check_deals(channel):
-    async with aiohttp.ClientSession() as session:
-        while True:
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"⏱ [{timestamp}] 🔎 Nouvelle recherche…")
-
-            html = await fetch(session, URL)
-            if not html:
-                print("⚠️ Aucune réponse de Dealabs.")
-                await asyncio.sleep(random.uniform(10, 20))
+        for deal in deals:
+            # Ignorer si expiré
+            expired = await deal.query_selector(".thread-expired")
+            if expired:
                 continue
 
-            soup = BeautifulSoup(html, "html.parser")
-            articles = soup.select("article.thread")  # tous les deals
-            print(f"➡️ Articles trouvés : {len(articles)}")
+            # Titre et URL
+            title_el = await deal.query_selector("h2.thread-title a")
+            if not title_el:
+                continue
+            title = await title_el.inner_text()
+            href = await title_el.get_attribute("href")
+            url = f"https://www.dealabs.com{href}"
 
-            new_deals = 0
-            for article in articles:
-                try:
-                    # Ignorer si deal expiré
-                    if article.select_one(".thread-expired"):
-                        continue
+            # Commerçant
+            merchant_el = await deal.query_selector(".merchant-name")
+            merchant = await merchant_el.inner_text() if merchant_el else "Inconnu"
 
-                    # Titre
-                    title_tag = article.select_one("h2.thread-title a")
-                    title = title_tag.get_text(strip=True) if title_tag else "Pas de titre"
+            # Prix, ancien prix, réduction
+            price_el = await deal.query_selector(".thread-price span.price")
+            current_price = await price_el.inner_text() if price_el else "N/A"
+            old_price_el = await deal.query_selector(".thread-price .old-price")
+            old_price = await old_price_el.inner_text() if old_price_el else "N/A"
+            discount_el = await deal.query_selector(".thread-price .reduction")
+            discount = await discount_el.inner_text() if discount_el else "N/A"
 
-                    # URL
-                    url = "https://www.dealabs.com" + title_tag["href"] if title_tag else URL
+            # Image
+            image_el = await deal.query_selector("img.thread-image")
+            image_url = await image_el.get_attribute("data-src") if image_el else None
 
-                    # Commerçant
-                    merchant_tag = article.select_one(".merchant-name")
-                    merchant = merchant_tag.get_text(strip=True) if merchant_tag else "Inconnu"
+            results.append({
+                "title": title.strip(),
+                "url": url,
+                "merchant": merchant.strip(),
+                "current_price": current_price.strip(),
+                "old_price": old_price.strip(),
+                "discount": discount.strip(),
+                "image": image_url
+            })
 
-                    # Prix actuel
-                    price_tag = article.select_one(".thread-price span.price")
-                    current_price = price_tag.get_text(strip=True) if price_tag else "N/A"
-
-                    # Ancien prix
-                    old_price_tag = article.select_one(".thread-price .old-price")
-                    old_price = old_price_tag.get_text(strip=True) if old_price_tag else "N/A"
-
-                    # Réduction
-                    discount_tag = article.select_one(".thread-price .reduction")
-                    discount = discount_tag.get_text(strip=True) if discount_tag else "N/A"
-
-                    # Image
-                    image_tag = article.select_one("img.thread-image")
-                    image_url = image_tag["data-src"] if image_tag and image_tag.has_attr("data-src") else None
-
-                    key = (title, url)
-                    if key not in seen_deals:
-                        seen_deals.add(key)
-                        new_deals += 1
-
-                        message = f"🔥 **Nouveau deal détecté !**\n**{title}**\n"
-                        message += f"Commerçant : {merchant}\n"
-                        message += f"Prix : {current_price} | Ancien prix : {old_price} | Réduction : {discount}\n"
-                        message += f"URL : {url}\n"
-                        if image_url:
-                            message += f"Image : {image_url}"
-
-                        await channel.send(message)
-                        print(f"➡️ Envoyé : {title}")
-
-                except Exception as e:
-                    print("❌ Erreur parsing deal :", e)
-
-            print(f"📩 Nouveaux deals envoyés : {new_deals}")
-            delay = max(10, random.uniform(MIN_INTERVAL, MAX_INTERVAL))
-            print(f"⏳ Prochain check dans {round(delay,2)} sec…\n")
-            await asyncio.sleep(delay)
+        await browser.close()
+        return results
 
 # ========================
-# 🚀 Démarrage du bot
+# 🔎 Boucle de check
+# ========================
+async def check_loop(channel):
+    while True:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"⏱ [{timestamp}] 🔎 Nouvelle recherche…")
+        try:
+            deals = await fetch_deals()
+            new_deals = 0
+            for deal in deals:
+                key = (deal["title"], deal["url"])
+                if key in seen_deals:
+                    continue
+                seen_deals.add(key)
+                new_deals += 1
+
+                msg = (
+                    f"🔥 **Nouveau deal détecté !**\n"
+                    f"**{deal['title']}**\n"
+                    f"Commerçant : {deal['merchant']}\n"
+                    f"Prix : {deal['current_price']} | Ancien prix : {deal['old_price']} | Réduction : {deal['discount']}\n"
+                    f"URL : {deal['url']}\n"
+                )
+                if deal["image"]:
+                    msg += f"Image : {deal['image']}"
+
+                await channel.send(msg)
+                print(f"➡️ Envoyé : {deal['title']}")
+
+            print(f"📩 Nouveaux deals envoyés : {new_deals}")
+
+        except Exception as e:
+            print("❌ Erreur lors de la récupération des deals :", e)
+
+        await asyncio.sleep(CHECK_INTERVAL)
+
+# ========================
+# 🚀 Bot Discord
 # ========================
 @bot.event
 async def on_ready():
     print(f"🤖 Connecté en tant que {bot.user}")
     channel = bot.get_channel(CHANNEL_ID)
-    if channel is None:
+    if not channel:
         print("❌ ERREUR : Impossible de trouver le salon. Vérifie DISCORD_CHANNEL_ID.")
         return
-    bot.loop.create_task(check_deals(channel))
+    bot.loop.create_task(check_loop(channel))
 
-# ========================
-# 🔐 Lancement du bot
-# ========================
 bot.run(TOKEN)
