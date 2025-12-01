@@ -23,6 +23,5 @@ RUN apt-get update && apt-get install -y \
     libatspi2.0-0 \
     libdbus-1-3 \
     libnspr4 \
-    libsmime3 \
     libxkbcommon0 \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
