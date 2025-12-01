@@ -1,3 +1,11 @@
+# ------------------------
+# Base Python
+# ------------------------
+FROM python:3.12-slim
+
+# ------------------------
+# Dépendances pour Playwright
+# ------------------------
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -25,3 +33,21 @@ RUN apt-get update && apt-get install -y \
     libnspr4 \
     libxkbcommon0 \
  && rm -rf /var/lib/apt/lists/*
+
+# ------------------------
+# Copier le code
+# ------------------------
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+
+# ------------------------
+# Installer Playwright
+# ------------------------
+RUN python -m playwright install chromium
+
+# ------------------------
+# Commande de lancement
+# ------------------------
+CMD ["python", "Dealab.py"]
